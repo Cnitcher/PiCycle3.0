@@ -507,32 +507,51 @@ class DisplayBase:
 		speed = in_data['curr_speed']
 		avg_speed = in_data['avg_speed']
 		distance = in_data['distance']
+		rpm = in_data['rpm']
+		timer = in_data['timer']
+		avg_rpm = in_data['avg_rpm']
 
 		# This is where we could get fancy with stuff like gauges
 		#img = self._draw_gauge(img, position, size, fg_color, bg_color, 
 		#	percents, temps, label)
-  
-		# Add the speed
-		txt = f'Speed: {speed:.1f}'
-		speed_canvas = self._draw_text(text=txt, font_name=self.primary_font, font_point_size=40, text_color=(0,0,0), rect=True, 
-								 outline_color=(3, 161, 252), fill_color=(255,255,255))
+
+		# Add the time
+		txt = f'{timer}'
+		timer_canvas = self._draw_text(text=txt, font_name=self.primary_font, font_point_size=25, text_color=(0, 0, 0),
+									   rect=True,
+									   outline_color=(0, 0, 0), fill_color=(255, 255, 255))
+		vert_buffer = timer_canvas.height // 2
+		horiz_buffer = timer_canvas.width // 2
 		if self.WIDTH == 240:
-			coords = (self.WIDTH // 2 - (speed_canvas.width // 2), 0)
+			coords = (self.WIDTH // 2 - (timer_canvas.width // 2), 0)
 		else:
 			# Leave 1/8 of a screen padding on top and left
 			coords = (self.WIDTH // 8, self.HEIGHT // 8)
-		img.paste(speed_canvas, coords, speed_canvas)
-		
-		# Add the distance
-		txt = f'Distance: {distance:.1f}'
-		distance_canvas = self._draw_text(text=txt, font_name=self.primary_font, font_point_size=40, text_color=(0,0,0), rect=True, 
-								 outline_color=(3, 161, 252), fill_color=(255,255,255))
+		img.paste(timer_canvas, coords, timer_canvas)
+
+		# Add the speed
+		txt = f'RPM: {rpm:.1f}'
+		speed_canvas = self._draw_text(text=txt, font_name=self.primary_font, font_point_size=25, text_color=(0,0,0), rect=True,
+								 outline_color=(0, 0, 0), fill_color=(255,255,255))
+
 		if self.WIDTH == 240:
 			coords = (self.WIDTH // 2 - (speed_canvas.width // 2), 0)
 		else:
 			# Add another 1/8 of a screen gap for between the bottom of speed and top of height.
-			coords = (self.WIDTH // 8, 2 * self.HEIGHT // 8 + speed_canvas.height)
-		img.paste(distance_canvas, coords, distance_canvas)
+			coords = (self.WIDTH // 8, 2 * self.HEIGHT // 8 + vert_buffer)
+		img.paste(speed_canvas, coords, speed_canvas)
+
+		# Add the average rpm
+		txt = f'AVG RPM: {avg_rpm}'
+		avg_rpm_canvas = self._draw_text(text=txt, font_name=self.primary_font, font_point_size=25, text_color=(0, 0, 0),
+									   rect=True,
+									   outline_color=(0, 0, 0), fill_color=(255, 255, 255))
+		if self.WIDTH == 240:
+			coords = (self.WIDTH // 2 - (avg_rpm_canvas.width // 2), 0)
+		else:
+			# Add another 1/8 of a screen gap for between the bottom of speed and top of height.
+			coords = (self.WIDTH // 8,  3 * self.HEIGHT // 8 + vert_buffer + vert_buffer)
+		img.paste(avg_rpm_canvas, coords, avg_rpm_canvas)
 
 		# Display Final Screen
 		self._display_canvas(img)

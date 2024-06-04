@@ -12,6 +12,7 @@ Description: This script will start at boot, initialize ....
 
 ==============================================================================
 '''
+from typing import Dict, List, Any
 
 '''
 ==============================================================================
@@ -37,7 +38,7 @@ log_level = logging.DEBUG if settings['globals']['debug_mode'] else logging.ERRO
 controlLogger = create_logger('control', filename='./logs/control.log', messageformat='%(asctime)s [%(levelname)s] %(message)s', level=log_level)
 
 # Flush Redis DB and create JSON structure
-current = read_control(flush=True)
+current: dict[str, bool | str | float | list[Any] | dict[Any, Any]] | Any = read_control(flush=True)
 controlLogger.info('Flushing Redis DB and creating new current structure')
 
 # Load the appropriate hardware interfaces
@@ -81,7 +82,7 @@ def _main_loop():
 	# Startup in standby mode
 	# Note that our modes will be Stop, Error, Riding
 	control = read_control()
-	control['mode'] = 'Stop'
+	control['mode'] = 'Riding'
 	control['updated'] = True
 	write_control(control, direct_write=True, origin='control')
 
@@ -138,6 +139,9 @@ def _main_loop():
 			current['curr_speed'] = speed_input.curr_speed()
 			current['avg_speed'] = speed_input.avg_speed()
 			current['distance'] = speed_input.distance()
+			current['rpm'] = speed_input.rpm()
+			current['avg_rpm'] = speed_input.average_rpm()
+			current['timer'] = speed_input.timer()
 			write_current(current)
 
 			# Send Data to Display

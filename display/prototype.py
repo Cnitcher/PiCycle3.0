@@ -56,11 +56,11 @@ class Display(DisplayBase):
 	def _keypress(self, key:keyboard.Key):
 
 		try:
-			if key.vk == 171:
+			if key.vk == 65:
 				self.input_event='ENTER'
-			elif key.vk == 167:
+			elif key.vk == 83:
 				self.input_event = 'UP'
-			elif key.vk == 166:
+			elif key.vk == 68:
 				self.input_event = 'DOWN'
 		except:
 			# Some keys (like enter) don't supply the above with a .vk value, so

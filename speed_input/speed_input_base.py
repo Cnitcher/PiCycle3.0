@@ -22,10 +22,10 @@ class SpeedBase:
         
         """ Initialize a bike speed calculator
 
-		Arguments:
-		pulse_gpio: gpio pin to read from
+        Arguments:
+        pulse_gpio: gpio pin to read from
         radius: radius of the wheel in inches
-		
+
         """
         # Initialize class attributes, note that because they are attributes of "self" they are
         # available to all functions in this class
@@ -35,7 +35,7 @@ class SpeedBase:
         self.prev_time = self.start_time
         self.curr_time_delta_sec = 0.0
 
-        # Factor for converting revelutions to miles.  1 rev = this many miles
+        # Factor for converting revolutions to miles.  1 rev = this many miles
         circ_inches = math.pi * radius**2
         circ_feet = circ_inches / 12.0
         self.dist_factor = circ_feet / 5280.0
@@ -54,4 +54,7 @@ class SpeedBase:
     def distance(self):
         """ Return the total distance traveled """
         pass
-    
+
+    def rpm(self):
+        """ Return the current RPM"""
+        pass

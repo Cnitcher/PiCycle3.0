@@ -339,6 +339,8 @@ def default_control():
 	control['status'] = ''
 	control['errors'] = []
 	control['system'] = {}
+	control['rpm'] = 0.0
+	control['timer'] = 0.0
 
 	return(control)
 
@@ -981,7 +983,10 @@ def write_current(in_data):
 	current['avg_speed'] = in_data['avg_speed']
 	current['distance'] = in_data['distance']
 	current['mode'] = in_data['mode']
-	current['timestamp'] = int(time.time() * 1000) 
+	current['timestamp'] = int(time.time() * 1000)
+	current['rpm'] = in_data['rpm']
+	current['avg_rpm'] = in_data['avg_rpm']
+	# current['timer'] = in_data['timer']
 
 	cmdsts.set('control:current', json.dumps(current))
 

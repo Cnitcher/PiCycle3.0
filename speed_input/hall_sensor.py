@@ -73,7 +73,6 @@ class BikeSpeed(SpeedBase):
 
         return mph
 
-   
     def avg_speed(self):
         """ Return the average speed """
 
