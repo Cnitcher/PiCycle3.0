@@ -5,7 +5,7 @@
     "display_rotation": 2,
     "lastupdated": 1712623870,
     "page_theme": "dark",
-    "real_hw": false,
+    "real_hw": true,
     "ui_port": 80,
     "venv": true,
     "wheel_rad_inches": 9.876

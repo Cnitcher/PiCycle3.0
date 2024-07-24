@@ -98,9 +98,10 @@ class Display(DisplayBase):
 			if command not in ['UP', 'DOWN', 'ENTER']:
 				return
 
+			self.display_active = True
 			self.display_command = None
 			self.display_data = None
-			self.input_event=None
+			self.input_event = None
 			self.menu_active = True
 			self.menu_time = time.time()
 			self._menu_display(command)

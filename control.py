@@ -82,7 +82,7 @@ def _main_loop():
 	# Startup in standby mode
 	# Note that our modes will be Stop, Error, Riding
 	control = read_control()
-	control['mode'] = 'Riding'
+	control['mode'] = 'Stop'
 	control['updated'] = True
 	write_control(control, direct_write=True, origin='control')
 
@@ -111,7 +111,7 @@ def _main_loop():
 			write_control(control, direct_write=True, origin='control')  # Commit change in 'updated' status to the file
 
 			if control['mode'] == 'Stop':
-				
+
 				# Kill our speed_input reader object.  Should we choose to ride again a new one will be created
 				if 'speed_input' in dir():
 					speed_input.stop_riding()

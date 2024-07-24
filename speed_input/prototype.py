@@ -64,16 +64,16 @@ class BikeSpeed(SpeedBase):
 
         # update out timer
         self._elapsed_time += round((current_time - self._last_time), 0)
-        print(f'Time in Seconds: {self._elapsed_time}')
+        # print(f'Time in Seconds: {self._elapsed_time}')
         self._elapsed_time_formatted = timedelta(seconds=self._elapsed_time)
-        print(f'formatted: {self._elapsed_time_formatted}')
+        # print(f'formatted: {self._elapsed_time_formatted}')
 
         # update out rpm and average rpm over duration of ride
         # self._rpm = 60/(current_time - self._last_time)
         self._rpm = random.uniform(75, 90)
-        print(self._rpm)
+        # print(self._rpm)
         self._avg_rpm = round((self._prev_avg * (self._elapsed_time - 1) + self._rpm) / self._elapsed_time, 1)
-        print(f"Average RPM: {self._avg_rpm}")
+        # print(f"Average RPM: {self._avg_rpm}")
         self._prev_avg = self._avg_rpm
 
         self._last_time = current_time

@@ -151,7 +151,8 @@ class DisplayBase:
 		"""
 		while True:
 		
-			#print(f'display_command={self.display_command}')
+			print(f'display_command={self.display_command}')
+			print(f"{self.menu['current']['mode']}")
 
 			if self.input_enabled:
 				self._event_detect()
@@ -163,16 +164,16 @@ class DisplayBase:
 						self.display_command = 'clear'
 
 			if self.display_command == 'clear':
-				self.display_active = False
+				self.display_active = True
 				self.display_timeout = None
 				self.display_command = None
 				self._display_clear()
 
 			if self.display_command == 'splash':
 				self._display_splash()
-				self.display_timeout = time.time() + 3
+				self.display_timeout = time.time() + 2
 				self.display_command = 'clear'
-				time.sleep(3) # Hold splash screen for 3 seconds
+				time.sleep(1) # Hold splash screen for 1 seconds
 
 			if self.display_command == 'text':
 				self._display_text()
@@ -208,6 +209,9 @@ class DisplayBase:
 			elif not self.display_timeout and self.display_active:
 				if self.in_data is not None:
 					self._display_current(self.in_data)
+
+			else:
+				self._display_current(self.menu)
 
 			time.sleep(0.1)
 
@@ -590,6 +594,8 @@ class DisplayBase:
 		# If selecting either active menu items or inactive menu items, take action based on what the button press was
 		else:
 			if action == 'DOWN':
+				self.display_active = True
+				self.menu_active = True
 				self.menu['current']['option'] -= 1
 				if self.menu['current']['option'] < 0:  # Check to make sure we haven't gone past 0
 					self.menu['current']['option'] = len(self.menu[self.menu['current']['mode']]) - 1
@@ -603,6 +609,8 @@ class DisplayBase:
 						break
 					index += 1
 			elif action == 'UP':
+				self.display_active = True
+				self.menu_active = True
 				self.menu['current']['option'] += 1
 				# Check to make sure we haven't gone past the end of the menu
 				if self.menu['current']['option'] == len(self.menu[self.menu['current']['mode']]):
