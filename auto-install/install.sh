@@ -71,7 +71,7 @@ echo "**                                                                     **"
 echo "**      Installing Dependencies... (This could take several minutes)   **"
 echo "**                                                                     **"
 echo "*************************************************************************"
-$SUDO apt install python3-dev python3-pip python3-venv python3-rpi.gpio python3-scipy nginx git supervisor ttf-mscorefonts-installer redis-server libatlas-base-dev libopenjp2-7 -y
+$SUDO apt install python3-dev python3-pip python3-venv python3-rpi.gpio python3-scipy git supervisor ttf-mscorefonts-installer libatlas-base-dev libopenjp2-7 -y
 
 # Grab project files
 # clear
@@ -113,20 +113,20 @@ source bin/activate
 
 echo " - Installing module dependencies... "
 #Install module dependencies 
-python -m pip install "flask==2.3.3" 
-python -m pip install flask-mobility
-python -m pip install flask-qrcode
-python -m pip install flask-socketio
-if ! python -c "import sys; assert sys.version_info[:2] >= (3,11)" > /dev/null; then
-    echo "System is running a python version lower than 3.11, installing eventlet==0.30.2";
-    python -m pip install "eventlet==0.30.2"
-else
-    echo "System is running a python version 3.11 or greater, installing latest eventlet"
-    python -m pip install eventlet
-fi      
-python -m pip install gunicorn
+#python -m pip install "flask==2.3.3"
+#python -m pip install flask-mobility
+#python -m pip install flask-qrcode
+#python -m pip install flask-socketio
+#if ! python -c "import sys; assert sys.version_info[:2] >= (3,11)" > /dev/null; then
+#    echo "System is running a python version lower than 3.11, installing eventlet==0.30.2";
+#    python -m pip install "eventlet==0.30.2"
+#else
+#    echo "System is running a python version 3.11 or greater, installing latest eventlet"
+#    python -m pip install eventlet
+#fi
+#python -m pip install gunicorn
 python -m pip install gpiozero
-python -m pip install redis
+#python -m pip install redis
 #python -m pip install uuid
 #python -m pip install influxdb-client[ciso]
 python -m pip install ratelimitingfilter
@@ -148,7 +148,7 @@ echo "**      Configuring config.txt                                         **"
 echo "**                                                                     **"
 echo "*************************************************************************"
 
-Enable SPI - Needed for some displays
+#Enable SPI - Needed for some displays
 echo "dtparam=spi=on" | $SUDO tee -a /boot/config.txt > /dev/null
 #Enable I2C - Needed for some displays, ADCs, distance sensors
 #echo "dtparam=i2c_arm=on" | $SUDO tee -a /boot/config.txt > /dev/null
@@ -171,19 +171,19 @@ echo "**      Configuring nginx...                                           **"
 echo "**                                                                     **"
 echo "*************************************************************************"
 # Move into install directory
-cd /usr/local/bin/picycle/auto-install/nginx
+#cd /usr/local/bin/picycle/auto-install/nginx
 
 # Delete default configuration
-$SUDO rm /etc/nginx/sites-enabled/default
+#$SUDO rm /etc/nginx/sites-enabled/default
 
 # Copy configuration file to nginx
-$SUDO cp picycle.nginx /etc/nginx/sites-available/picycle
+#$SUDO cp picycle.nginx /etc/nginx/sites-available/picycle
 
 # Create link in sites-enabled
-$SUDO ln -s /etc/nginx/sites-available/picycle /etc/nginx/sites-enabled
+#$SUDO ln -s /etc/nginx/sites-available/picycle /etc/nginx/sites-enabled
 
 # Restart nginx
-$SUDO service nginx restart
+#$SUDO service nginx restart
 
 ### Setup Supervisor to Start Apps on Boot / Restart on Failures
 clear
@@ -197,24 +197,24 @@ echo "*************************************************************************"
 cd /usr/local/bin/picycle/auto-install/supervisor
 # Add the current username to the configuration files 
 echo "user=" $USER | tee -a control.conf > /dev/null
-echo "user=" $USER | tee -a webapp.conf > /dev/null
+#echo "user=" $USER | tee -a webapp.conf > /dev/null
 
 $SUDO cp *.conf /etc/supervisor/conf.d/
 
-SVISOR=$(whiptail --title "Would you like to enable the supervisor WebUI?" --radiolist "This allows you to check the status of the supervised processes via a web browser, and also allows those processes to be restarted directly from this interface. (Recommended)" 20 78 2 "ENABLE_SVISOR" "Enable the WebUI" ON "DISABLE_SVISOR" "Disable the WebUI" OFF 3>&1 1>&2 2>&3)
-
-if [[ $SVISOR = "ENABLE_SVISOR" ]];then
-   echo " " | sudo tee -a /etc/supervisor/supervisord.conf > /dev/null
-   echo "[inet_http_server]" | sudo tee -a /etc/supervisor/supervisord.conf > /dev/null
-   echo "port = 9001" | sudo tee -a /etc/supervisor/supervisord.conf > /dev/null
-   USERNAME=$(whiptail --inputbox "Choose a username [default: user]" 8 78 user --title "Choose Username" 3>&1 1>&2 2>&3)
-   echo "username = " $USERNAME | sudo tee -a /etc/supervisor/supervisord.conf > /dev/null
-   PASSWORD=$(whiptail --passwordbox "Enter your password" 8 78 --title "Choose Password" 3>&1 1>&2 2>&3)
-   echo "password = " $PASSWORD | sudo tee -a /etc/supervisor/supervisord.conf > /dev/null
-   whiptail --msgbox --backtitle "Supervisor WebUI Setup" --title "Setup Completed" "You now should be able to access the Supervisor WebUI at http://your.ip.address.here:9001 with the username and password you have chosen." ${r} ${c}
-else
-   echo "No WebUI Setup."
-fi
+#SVISOR=$(whiptail --title "Would you like to enable the supervisor WebUI?" --radiolist "This allows you to check the status of the supervised processes via a web browser, and also allows those processes to be restarted directly from this interface. (Recommended)" 20 78 2 "ENABLE_SVISOR" "Enable the WebUI" ON "DISABLE_SVISOR" "Disable the WebUI" OFF 3>&1 1>&2 2>&3)
+#
+#if [[ $SVISOR = "ENABLE_SVISOR" ]];then
+#   echo " " | sudo tee -a /etc/supervisor/supervisord.conf > /dev/null
+#   echo "[inet_http_server]" | sudo tee -a /etc/supervisor/supervisord.conf > /dev/null
+#   echo "port = 9001" | sudo tee -a /etc/supervisor/supervisord.conf > /dev/null
+#   USERNAME=$(whiptail --inputbox "Choose a username [default: user]" 8 78 user --title "Choose Username" 3>&1 1>&2 2>&3)
+#   echo "username = " $USERNAME | sudo tee -a /etc/supervisor/supervisord.conf > /dev/null
+#   PASSWORD=$(whiptail --passwordbox "Enter your password" 8 78 --title "Choose Password" 3>&1 1>&2 2>&3)
+#   echo "password = " $PASSWORD | sudo tee -a /etc/supervisor/supervisord.conf > /dev/null
+#   whiptail --msgbox --backtitle "Supervisor WebUI Setup" --title "Setup Completed" "You now should be able to access the Supervisor WebUI at http://your.ip.address.here:9001 with the username and password you have chosen." ${r} ${c}
+#else
+#   echo "No WebUI Setup."
+#fi
 
 # If supervisor isn't already running, startup Supervisor
 $SUDO service supervisor start
