@@ -72,7 +72,8 @@ class BikeSpeed(SpeedBase):
         # self._rpm = 60/(current_time - self._last_time)
         self._rpm = random.uniform(75, 90)
         # print(self._rpm)
-        self._avg_rpm = round((self._prev_avg * (self._elapsed_time - 1) + self._rpm) / self._elapsed_time, 1)
+        elapsed_seconds = max(self._elapsed_time, 1)
+        self._avg_rpm = round((self._prev_avg * (elapsed_seconds - 1) + self._rpm) / elapsed_seconds, 1)
         # print(f"Average RPM: {self._avg_rpm}")
         self._prev_avg = self._avg_rpm
 
@@ -89,6 +90,8 @@ class BikeSpeed(SpeedBase):
     def avg_speed(self):
         """ Return the average speed """
         time_delta_hrs = (time.time() - self.start_time) / 3600.0
+        if time_delta_hrs <= 0:
+            return 0.0
         s = self._distance / time_delta_hrs
         return s
 

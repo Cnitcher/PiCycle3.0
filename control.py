@@ -25,6 +25,7 @@ import logging
 import time
 import importlib
 from common import *  # Common Module for WebUI and Control Program
+from runtime_modes import display_module_name, speed_module_name
 
 '''
 ==============================================================================
@@ -33,7 +34,6 @@ from common import *  # Common Module for WebUI and Control Program
 '''
 # Read Settings
 settings = read_settings()
-is_real_hardware = True #settings['globals']['real_hw']
 
 # Setup logging
 # log_level = logging.DEBUG if settings['globals']['debug_mode'] else logging.ERROR
@@ -48,11 +48,7 @@ is_real_hardware = True #settings['globals']['real_hw']
 '''
 Set up Speed input Module- user the prototype or real based on the settings file
 '''
-module = ''
-if is_real_hardware:
-	module = 'speed_input.hall_sensor'
-else:
-	module = 'speed_input.prototype'
+module = speed_module_name(settings)
 
 SpeedModule = importlib.import_module(module) 
 # controlLogger.info(f'Imported speed input module from {module}')
@@ -61,11 +57,7 @@ SpeedModule = importlib.import_module(module)
 '''
 Set up Display Module- user the prototype or real based on the settings file
 '''
-module = ''
-if is_real_hardware:
-	module = 'display.ili9341'
-else:
-	module = 'display.prototype'
+module = display_module_name(settings)
 
 DisplayModule = importlib.import_module(module)
 # controlLogger.info(f'Imported display module from {module}')
@@ -154,5 +146,6 @@ def _main_loop():
 
 		time.sleep(1)
 
-# Start running the main loop, which will run forever
-_main_loop()
+if __name__ == '__main__':
+	# Start running the main loop, which will run forever
+	_main_loop()

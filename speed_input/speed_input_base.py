@@ -14,7 +14,6 @@
 
 import time
 import math
-from common import create_logger
 
 class SpeedBase:
 

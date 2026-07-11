@@ -1,0 +1,65 @@
+[project]
+name = "picycle"
+version = "0.1.0"
+description = "Raspberry Pi Zero workout computer for a Schwinn Airdyne."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "eventlet",
+    "flask",
+    "flask-socketio",
+    "gunicorn",
+    "pillow",
+    "qrcode",
+    "ratelimitingfilter",
+    "redis",
+]
+
+[project.optional-dependencies]
+prototype = [
+    "numpy",
+    "opencv-python",
+    "pynput",
+]
+hardware = [
+    "gpiozero",
+    "luma.core",
+    "luma.lcd",
+    "RPi.GPIO",
+]
+dev = [
+    "pytest",
+]
+
+[tool.setuptools]
+py-modules = [
+    "app",
+    "appliance_runtime",
+    "control",
+    "ride_session",
+    "runtime_modes",
+    "storage",
+]
+
+[tool.picycle.smoke_imports]
+core = [
+    "eventlet",
+    "flask",
+    "flask_socketio",
+    "gunicorn",
+    "PIL",
+    "qrcode",
+    "ratelimitingfilter",
+    "redis",
+]
+prototype = [
+    "cv2",
+    "numpy",
+    "pynput",
+]
+hardware = [
+    "gpiozero",
+    "luma.core",
+    "luma.lcd",
+    "RPi.GPIO",
+]

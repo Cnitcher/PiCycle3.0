@@ -1,0 +1,4 @@
+# Compatibility wrapper for environments that install with pip requirements files.
+# The canonical dependency groups live in pyproject.toml.
+-e .[prototype]
+
