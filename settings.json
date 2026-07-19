@@ -6,8 +6,11 @@
     "lastupdated": 1712623870,
     "page_theme": "dark",
     "real_hw": true,
+    "sensor_pulses_per_rev": 1,
+    "speed_distance_multiplier": 1.0,
     "ui_port": 80,
     "venv": true,
+    "wheel_diameter_inches": 26.0,
     "wheel_rad_inches": 9.876
   },
   "gpio_assignments": {

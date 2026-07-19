@@ -17,7 +17,7 @@ import math
 
 class SpeedBase:
 
-    def __init__(self, radius=1.0):
+    def __init__(self, radius=1.0, pulses_per_rev=1.0, distance_multiplier=1.0):
         
         """ Initialize a bike speed calculator
 
@@ -34,10 +34,14 @@ class SpeedBase:
         self.prev_time = self.start_time
         self.curr_time_delta_sec = 0.0
 
-        # Factor for converting revolutions to miles.  1 rev = this many miles
-        circ_inches = math.pi * radius**2
+        self.pulses_per_rev = max(float(pulses_per_rev), 1.0)
+        self.distance_multiplier = float(distance_multiplier)
+
+        # Factor for converting sensor pulses to miles.
+        # One revolution travels the wheel circumference, not the wheel area.
+        circ_inches = 2 * math.pi * radius
         circ_feet = circ_inches / 12.0
-        self.dist_factor = circ_feet / 5280.0
+        self.dist_factor = (circ_feet / 5280.0) * self.distance_multiplier / self.pulses_per_rev
 
     def stop_riding(self):       
         pass

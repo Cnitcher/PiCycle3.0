@@ -21,8 +21,11 @@ import time
 import socket
 import qrcode
 import logging
+from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 from common import read_control, write_control
+from picycle_appliance import PiCycleAppliance, format_duration, format_mmss
+import storage
 
 '''
 Display base class definition
@@ -71,6 +74,7 @@ class DisplayBase:
 
         self.inc_pulse_color = True
         self.icon_color = 100
+        self.appliance = PiCycleAppliance(rides=self._load_ride_history())
 
     def _init_display_device(self):
         '''
@@ -152,18 +156,8 @@ class DisplayBase:
         Main display loop
         """
         while True:
-
-            print(f'display_command={self.display_command}')
-            print(f"{self.menu['current']['mode']}")
-
             if self.input_enabled:
                 self._event_detect()
-
-            if self.display_timeout:
-                if time.time() > self.display_timeout:
-                    self.display_timeout = None
-                    if not self.display_active:
-                        self.display_command = 'clear'
 
             if self.display_command == 'clear':
                 self.display_active = True
@@ -193,28 +187,8 @@ class DisplayBase:
                 else:
                     self.display_text("No IP Found")
 
-            # input("Press Enter to continue...")
-            if self.input_enabled:
-                #print('a', self.menu_active, self.display_timeout, self.display_active)
-                if self.menu_active and not self.display_timeout:
-                    if time.time() - self.menu_time > 5:
-                        self.menu_active = False
-                        self.menu['current']['mode'] = 'none'
-                        self.menu['current']['option'] = 0
-                        if not self.display_active:
-                            self.display_command = 'clear'
-                elif not self.display_timeout and self.display_active:
-                    #print(self.in_data)
-                    if self.in_data is not None:
-                        self._display_current(self.in_data)
-
-            elif not self.display_timeout and self.display_active:
-                if self.in_data is not None:
-                    self._display_current(self.in_data)
-
-            else:
-                self._display_current(self.menu)
-
+            if not self.display_timeout:
+                self._display_current(self.in_data or {})
             time.sleep(0.1)
 
     '''
@@ -276,8 +250,17 @@ class DisplayBase:
         draw.pieslice([(x0, y1 - rad * 2), (x0 + rad * 2, y1)], 90, 180, fill=fill)
         draw.pieslice([(x1 - rad * 2, y0), (x1, y0 + rad * 2)], 270, 360, fill=fill)
 
+    def _font(self, font_point_size, font_name=None):
+        font_name = font_name or self.primary_font
+        for candidate in (font_name, 'DejaVuSans.ttf'):
+            try:
+                return ImageFont.truetype(candidate, font_point_size)
+            except OSError:
+                continue
+        return ImageFont.load_default()
+
     def _draw_text(self, text, font_name, font_point_size, text_color, rect=False, fill_color=None, outline_color=None):
-        font = ImageFont.truetype(font_name, font_point_size)
+        font = self._font(font_point_size, font_name)
         font_bbox = font.getbbox(str(text))  # Grab the width of the text
         font_canvas_size = (font_bbox[2], font_bbox[3])
         font_canvas = Image.new('RGBA', font_canvas_size)
@@ -482,91 +465,268 @@ class DisplayBase:
         self._display_canvas(img)
 
     def _display_current(self, in_data):
-
-        # current['curr_speed'] = speed_input.curr_speed()
-        # current['avg_speed'] = speed_input.avg_speed()
-        # current['distance'] = speed_input.distance()
-
-        # Create canvas
+        self.appliance.update_metrics(in_data or {})
+        self._persist_saved_ride()
+        self._persist_deleted_ride()
         img = Image.new('RGBA', (self.WIDTH, self.HEIGHT), color=(0, 0, 0))
-
-        # Set the position and paste the background image onto the canvas
-        # Note: 0,0 is the upper left corner, so 320 is the right side and 240 is the bottom.
-        # +------------------------------------------+
-        # | (0,0)                             (320,0)|
-        # |                                          |
-        # |                                          |
-        # |                                          |
-        # | (0,240)                         (320,240)|
-        # +------------------------------------------+
-
-        position = (0, 0)
-
-        #TODO - get a better background image!
-        img.paste(self.background, position)
-
-        # Create drawing object
         draw = ImageDraw.Draw(img)
-
-        # ========  Circle Gauge ========
-        # position = (self.WIDTH // 2 - 80, self.HEIGHT // 2 - 110)
-        # size = (160, 160)
-        # bg_color = (50, 50, 50)  # Grey
-        # fg_color = (200, 0, 0)  # Red
-
-        speed = in_data['curr_speed']
-        avg_speed = in_data['avg_speed']
-        distance = in_data['distance']
-        rpm = in_data['rpm']
-        timer = in_data['timer']
-        avg_rpm = in_data['avg_rpm']
-
-        # This is where we could get fancy with stuff like gauges
-        #img = self._draw_gauge(img, position, size, fg_color, bg_color,
-        #	percents, temps, label)
-
-        # Add the time
-        txt = f'{timer}'
-        timer_canvas = self._draw_text(text=txt, font_name=self.primary_font, font_point_size=25, text_color=(0, 0, 0),
-                                       rect=True,
-                                       outline_color=(0, 0, 0), fill_color=(255, 255, 255))
-        vert_buffer = timer_canvas.height // 2
-        horiz_buffer = timer_canvas.width // 2
-        if self.WIDTH == 240:
-            coords = (self.WIDTH // 2 - (timer_canvas.width // 2), 0)
+        snap = self.appliance.snapshot()
+        view = snap['view']
+        if view == 'menu':
+            self._draw_menu(draw, 'PiCycle', snap['items'], snap['selected'], show_footer=False)
+        elif view == 'programs':
+            self._draw_menu(draw, 'Programs', snap['items'], snap['selected'])
+        elif view == 'tabata_setup':
+            self._draw_setup(draw, 'Tabata', [
+                ('Warmup', format_duration(snap['tabata_config']['warmupSec'])),
+                ('All Out', format_duration(snap['tabata_config']['hotSec'])),
+                ('Recover', format_duration(snap['tabata_config']['recoverSec'])),
+                ('Rounds', str(snap['tabata_config']['rounds'])),
+                ('Start', ''),
+            ], snap['selected'])
+        elif view == 'swedish_setup':
+            self._draw_setup(draw, 'Swedish 4x4', [
+                ('Warmup', format_duration(snap['swedish_config']['warmupSec'])),
+                ('Start', ''),
+            ], snap['selected'])
+        elif view == 'history':
+            self._draw_history(draw, snap)
+        elif view == 'review':
+            self._draw_review(draw, snap)
+        elif view == 'delete_confirm':
+            self._draw_delete_confirm(draw, snap)
+        elif view == 'pause':
+            self._draw_menu(draw, 'Paused', snap['items'], snap['selected'])
+        elif view in ['ride', 'tabata_ride', 'swedish_ride']:
+            self._draw_ride(draw, snap)
         else:
-            # Leave 1/8 of a screen padding on top and left
-            coords = (self.WIDTH // 8, self.HEIGHT // 8)
-        img.paste(timer_canvas, coords, timer_canvas)
-
-        # Add the speed
-        txt = f'RPM: {rpm:.1f}'
-        speed_canvas = self._draw_text(text=txt, font_name=self.primary_font, font_point_size=25, text_color=(0, 0, 0),
-                                       rect=True,
-                                       outline_color=(0, 0, 0), fill_color=(255, 255, 255))
-
-        if self.WIDTH == 240:
-            coords = (self.WIDTH // 2 - (speed_canvas.width // 2), 0)
-        else:
-            # Add another 1/8 of a screen gap for between the bottom of speed and top of height.
-            coords = (self.WIDTH // 8, 2 * self.HEIGHT // 8 + vert_buffer)
-        img.paste(speed_canvas, coords, speed_canvas)
-
-        # Add the average rpm
-        txt = f'AVG RPM: {avg_rpm}'
-        avg_rpm_canvas = self._draw_text(text=txt, font_name=self.primary_font, font_point_size=25,
-                                         text_color=(0, 0, 0),
-                                         rect=True,
-                                         outline_color=(0, 0, 0), fill_color=(255, 255, 255))
-        if self.WIDTH == 240:
-            coords = (self.WIDTH // 2 - (avg_rpm_canvas.width // 2), 0)
-        else:
-            # Add another 1/8 of a screen gap for between the bottom of speed and top of height.
-            coords = (self.WIDTH // 8, 3 * self.HEIGHT // 8 + vert_buffer + vert_buffer)
-        img.paste(avg_rpm_canvas, coords, avg_rpm_canvas)
-
-        # Display Final Screen
+            self._draw_top_bar(draw, 'Settings', '')
+            self._draw_centered_text(draw, 'Wheel, display, and device settings.', 118, 18, (170, 170, 170))
+            self._draw_footer(draw, 'Double-click for back')
         self._display_canvas(img)
+
+    def _load_ride_history(self):
+        try:
+            with storage.open_database() as connection:
+                return storage.list_completed_ride_summaries(connection, limit=20)
+        except Exception:
+            return []
+
+    def _persist_saved_ride(self):
+        ride = self.appliance.pop_saved_ride()
+        if not ride:
+            return
+        try:
+            with storage.open_database() as connection:
+                storage.save_completed_ride_summary(connection, ride)
+        except Exception:
+            pass
+
+    def _persist_deleted_ride(self):
+        ride_id = self.appliance.pop_deleted_ride_id()
+        if not ride_id:
+            return
+        try:
+            with storage.open_database() as connection:
+                storage.delete_completed_ride_summary(connection, ride_id)
+        except Exception:
+            pass
+
+    def appliance_snapshot(self):
+        return self.appliance.snapshot()
+
+    def _handle_input_command(self, command):
+        if command not in ['UP', 'DOWN', 'ENTER']:
+            return
+        self.display_active = True
+        self.display_command = None
+        self.display_data = None
+        self.display_timeout = None
+        self.appliance.handle_input(command)
+        self._persist_saved_ride()
+        self._persist_deleted_ride()
+
+    def _text_size(self, draw, text, font):
+        bbox = draw.textbbox((0, 0), str(text), font=font)
+        return bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+    def _draw_label(self, draw, text, xy, size, fill=(255, 255, 255), font_name=None):
+        draw.text(xy, str(text), font=self._font(size, font_name), fill=fill)
+
+    def _draw_right_label(self, draw, text, x, y, size, fill=(255, 255, 255)):
+        font = self._font(size)
+        width, _ = self._text_size(draw, text, font)
+        draw.text((x - width, y), str(text), font=font, fill=fill)
+
+    def _draw_centered_text(self, draw, text, center_y, size, fill=(255, 255, 255)):
+        font = self._font(size)
+        width, height = self._text_size(draw, text, font)
+        draw.text(((self.WIDTH - width) // 2, int(center_y - height / 2)), str(text), font=font, fill=fill)
+
+    def _draw_top_bar(self, draw, title, clock_text='', title_size=16, clock_size=16, bar_height=25):
+        draw.line((0, bar_height, self.WIDTH, bar_height), fill=(45, 45, 45), width=1)
+        self._draw_label(draw, title, (8, 4), title_size, (235, 235, 235))
+        if clock_text:
+            self._draw_right_label(draw, clock_text, self.WIDTH - 8, 4, clock_size, (235, 235, 235))
+
+    def _draw_top_actions(self, draw, items, selected):
+        x = self.WIDTH - 8
+        for index in range(len(items) - 1, -1, -1):
+            item = items[index]
+            fill = (255, 255, 255) if index == selected else (150, 150, 150)
+            font = self._font(12)
+            width, _ = self._text_size(draw, item, font)
+            draw.text((x - width, 7), item, font=font, fill=fill)
+            if index == selected:
+                draw.line((x - width, 22, x, 22), fill=fill, width=1)
+            x -= width + 12
+
+    def _draw_footer(self, draw, text):
+        draw.line((0, self.HEIGHT - 24, self.WIDTH, self.HEIGHT - 24), fill=(45, 45, 45), width=1)
+        self._draw_label(draw, text, (8, self.HEIGHT - 18), 12, (170, 170, 170))
+
+    def _draw_menu(self, draw, title, items, selected, show_footer=True):
+        self._draw_top_bar(draw, title, '')
+        y = 39
+        for index, item in enumerate(items):
+            fill = (255, 255, 255) if index == selected else (190, 190, 190)
+            self._draw_label(draw, item, (18, y), 24, fill)
+            if index == selected:
+                font = self._font(24)
+                width, _ = self._text_size(draw, item, font)
+                draw.line((18, y + 28, 18 + width, y + 28), fill=(255, 255, 255), width=2)
+            y += 42
+        if show_footer:
+            self._draw_footer(draw, 'Double-click for back')
+
+    def _draw_setup(self, draw, title, rows, selected):
+        self._draw_top_bar(draw, title, '')
+        y = 38
+        for index, (label, value) in enumerate(rows):
+            fill = (255, 255, 255) if index == selected else (190, 190, 190)
+            self._draw_label(draw, label, (14, y), 21, fill)
+            if value:
+                self._draw_right_label(draw, value, self.WIDTH - 14, y, 21, fill)
+            if index == selected:
+                draw.line((14, y + 25, self.WIDTH - 14, y + 25), fill=(255, 255, 255), width=2)
+            y += 35
+        self._draw_footer(draw, 'Double-click for back')
+
+    def _draw_ride(self, draw, snap):
+        title = snap['active_label']
+        self._draw_top_bar(draw, title, snap['elapsed_text'], title_size=22, clock_size=22, bar_height=34)
+        y = 44
+        if snap['phase']:
+            phase = snap['phase']
+            self._draw_centered_text(draw, phase['name'], 55, 24)
+            self._draw_centered_text(draw, format_duration(phase['remaining']), 80, 28)
+            self._draw_centered_text(draw, f"Round {phase['round']} of {phase['rounds']}", 106, 13, (170, 170, 170))
+            if snap['feedback']:
+                feedback = snap['feedback']
+                self._draw_centered_text(draw, f"{feedback['status']} - {feedback['detail']}", 123, 12, (170, 170, 170))
+                y = 132
+            else:
+                y = 119
+        labels = [('mph', snap['speed']), ('Cal', snap['calories']), ('avg mph', snap['avg_speed'])]
+        column_width = self.WIDTH // 3
+        for index, (label, value) in enumerate(labels):
+            cx = index * column_width + column_width // 2
+            value_text = f"{value:.1f}"
+            font = self._font(34)
+            width, _ = self._text_size(draw, value_text, font)
+            draw.text((cx - width // 2, y), value_text, font=font, fill=(255, 255, 255))
+            label_font = self._font(13)
+            label_width, _ = self._text_size(draw, label, label_font)
+            draw.text((cx - label_width // 2, y + 38), label, font=label_font, fill=(170, 170, 170))
+        self._draw_chart(draw, snap['pace_history'], (8, self.HEIGHT - 64, self.WIDTH - 8, self.HEIGHT - 30))
+        self._draw_footer(draw, 'Press to pause')
+
+    def _draw_history(self, draw, snap):
+        self._draw_top_bar(draw, 'History', '')
+        rides = snap['rides']
+        selected = min(snap['selected'], max(0, len(rides) - 1))
+        start = max(0, min(selected - 2, max(0, len(rides) - 5)))
+        y = 34
+        for offset, ride in enumerate(rides[start:start + 5]):
+            index = start + offset
+            fill = (255, 255, 255) if index == selected else (190, 190, 190)
+            self._draw_label(draw, self._format_date(ride.get('ended_at')), (14, y), 18, fill)
+            self._draw_label(draw, ride.get('type') or ride.get('label', 'Ride'), (14, y + 18), 12, (170, 170, 170))
+            if index == selected:
+                draw.line((14, y + 35, self.WIDTH - 14, y + 35), fill=(255, 255, 255), width=2)
+            y += 36
+        if not rides:
+            self._draw_centered_text(draw, 'No saved rides yet.', 112, 18, (170, 170, 170))
+        self._draw_footer(draw, 'Double-click for back')
+
+    def _draw_review(self, draw, snap):
+        ride = snap['review']
+        self._draw_top_bar(draw, 'Review', '')
+        self._draw_top_actions(draw, snap['items'], snap['selected'])
+        if not ride:
+            self._draw_centered_text(draw, 'No ride selected.', 112, 18, (170, 170, 170))
+            self._draw_footer(draw, 'Press for back')
+            return
+        self._draw_label(draw, self._format_date(ride.get('ended_at')), (10, 31), 17)
+        self._draw_label(draw, ride.get('type') or ride.get('label', 'Ride'), (10, 51), 12, (170, 170, 170))
+        structure = ride.get('structure')
+        program = ride.get('program')
+        if structure and program == 'tabata':
+            text = f"{structure['rounds']} x {structure['hotSec']}s all out / {structure['recoverSec']}s recover"
+            self._draw_label(draw, text, (10, 68), 12, (190, 190, 190))
+        elif structure and program == 'swedish':
+            text = f"{structure['rounds']} x {format_duration(structure['hardSec'])} hard / {format_duration(structure['recoverSec'])} recover"
+            self._draw_label(draw, text, (10, 68), 12, (190, 190, 190))
+        metrics = [
+            (format_mmss(ride.get('durationSec', 0)), 'time'),
+            (f"{ride.get('calories', 0):.1f}", 'Cal'),
+            (f"{ride.get('avgSpeed', 0):.1f}", 'avg mph'),
+        ]
+        for index, (value, label) in enumerate(metrics):
+            x = 12 + index * 104
+            self._draw_label(draw, value, (x, 91), 23)
+            self._draw_label(draw, label, (x, 119), 11, (170, 170, 170))
+        self._draw_chart(draw, ride.get('samples') or [0], (8, 146, self.WIDTH - 8, 202))
+        self._draw_footer(draw, 'Turn to choose action, press to select')
+
+    def _draw_delete_confirm(self, draw, snap):
+        ride = snap['review']
+        self._draw_top_bar(draw, 'Delete ride', '')
+        if ride:
+            self._draw_label(draw, self._format_date(ride.get('ended_at')), (12, 39), 16)
+            self._draw_label(draw, ride.get('type') or ride.get('label', 'Ride'), (12, 58), 12, (170, 170, 170))
+        self._draw_centered_text(draw, 'This will delete', 92, 22)
+        self._draw_centered_text(draw, 'this ride.', 118, 22)
+        self._draw_centered_text(draw, 'Are you sure?', 148, 17, (190, 190, 190))
+        y = 177
+        for index, item in enumerate(snap['items']):
+            x = 83 + index * 93
+            fill = (255, 255, 255) if index == snap['selected'] else (150, 150, 150)
+            self._draw_label(draw, item, (x, y), 22, fill)
+            if index == snap['selected']:
+                font = self._font(22)
+                width, _ = self._text_size(draw, item, font)
+                draw.line((x, y + 27, x + width, y + 27), fill=fill, width=2)
+        self._draw_footer(draw, 'No keeps ride, Yes deletes')
+
+    def _draw_chart(self, draw, values, box):
+        x0, y0, x1, y1 = box
+        values = values or [0]
+        max_value = max(1.0, max(values))
+        points = []
+        for index, value in enumerate(values):
+            x = x0 + (x1 - x0) * index / max(1, len(values) - 1)
+            y = y1 - (float(value) / max_value) * (y1 - y0 - 4) - 2
+            points.append((x, y))
+        draw.line((x0, y1, x1, y1), fill=(65, 65, 65), width=1)
+        if len(points) > 1:
+            draw.line(points, fill=(120, 190, 235), width=2)
+
+    def _format_date(self, timestamp):
+        if not timestamp:
+            return ''
+        date = datetime.fromtimestamp(float(timestamp))
+        return f"{date.strftime('%b')} {date.day} {date.strftime('%I:%M %p').lstrip('0')}"
 
     '''
      ====================== Input & Menu Code ========================

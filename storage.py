@@ -292,6 +292,63 @@ def complete_session(
     connection.commit()
 
 
+def save_completed_ride_summary(
+    connection: sqlite3.Connection,
+    ride: dict[str, Any],
+    program_id: int | None = None,
+) -> int:
+    session_id = create_session(connection, program_id=program_id, started_at=ride.get("started_at"))
+    complete_session(connection, session_id, ride, ended_at=ride.get("ended_at"))
+    return session_id
+
+
+def list_completed_ride_summaries(
+    connection: sqlite3.Connection,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    rows = connection.execute(
+        """
+        SELECT id, started_at, ended_at, summary_json
+        FROM sessions
+        WHERE status = 'completed'
+        ORDER BY ended_at DESC, id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    rides = []
+    for row in rows:
+        summary = _json_loads(row["summary_json"])
+        summary.setdefault("id", f"session-{row['id']}")
+        summary.setdefault("started_at", row["started_at"])
+        summary.setdefault("ended_at", row["ended_at"])
+        rides.append(summary)
+    return rides
+
+
+def delete_completed_ride_summary(connection: sqlite3.Connection, ride_id: str) -> bool:
+    rows = connection.execute(
+        """
+        SELECT id, summary_json
+        FROM sessions
+        WHERE status = 'completed'
+        """
+    ).fetchall()
+    session_id = None
+    if ride_id.startswith("session-"):
+        try:
+            session_id = int(ride_id.removeprefix("session-"))
+        except ValueError:
+            session_id = None
+    for row in rows:
+        summary = _json_loads(row["summary_json"])
+        if row["id"] == session_id or summary.get("id") == ride_id:
+            connection.execute("DELETE FROM sessions WHERE id = ?", (row["id"],))
+            connection.commit()
+            return True
+    return False
+
+
 def get_session(connection: sqlite3.Connection, session_id: int) -> dict[str, Any] | None:
     session = connection.execute(
         "SELECT * FROM sessions WHERE id = ?",

@@ -22,8 +22,8 @@ class BikeSpeed(SpeedBase):
     BASE_SPEED = 10.0
     RANDOM_RANGE = 2.0
 
-    def __init__(self, pulse_gpio=0, radius=1.0 ):
-        super().__init__(radius)
+    def __init__(self, pulse_gpio=0, radius=1.0, pulses_per_rev=1.0, distance_multiplier=1.0):
+        super().__init__(radius, pulses_per_rev, distance_multiplier)
         
         self._speed = 0
         self._distance = 0

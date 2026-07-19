@@ -71,6 +71,52 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(len(session["samples"]), 1)
         self.assertEqual(session["events"][0]["payload"], {"reason": "test"})
 
+    def test_completed_ride_summary_helpers_round_trip(self):
+        ride = {
+            "id": "ride-1",
+            "label": "Tabata",
+            "program": "tabata",
+            "started_at": 100.0,
+            "ended_at": 200.0,
+            "durationSec": 100,
+            "calories": 12.3,
+        }
+        with storage.open_database(":memory:") as connection:
+            storage.save_completed_ride_summary(connection, ride)
+            rides = storage.list_completed_ride_summaries(connection)
+        self.assertEqual(len(rides), 1)
+        self.assertEqual(rides[0]["label"], "Tabata")
+        self.assertEqual(rides[0]["calories"], 12.3)
+
+    def test_delete_completed_ride_summary_by_summary_id(self):
+        ride = {
+            "id": "ride-1",
+            "label": "Ride",
+            "started_at": 100.0,
+            "ended_at": 200.0,
+            "durationSec": 100,
+        }
+        with storage.open_database(":memory:") as connection:
+            storage.save_completed_ride_summary(connection, ride)
+            deleted = storage.delete_completed_ride_summary(connection, "ride-1")
+            rides = storage.list_completed_ride_summaries(connection)
+        self.assertTrue(deleted)
+        self.assertEqual(rides, [])
+
+    def test_delete_completed_ride_summary_by_generated_session_id(self):
+        ride = {
+            "label": "Ride",
+            "started_at": 100.0,
+            "ended_at": 200.0,
+            "durationSec": 100,
+        }
+        with storage.open_database(":memory:") as connection:
+            session_id = storage.save_completed_ride_summary(connection, ride)
+            deleted = storage.delete_completed_ride_summary(connection, f"session-{session_id}")
+            rides = storage.list_completed_ride_summaries(connection)
+        self.assertTrue(deleted)
+        self.assertEqual(rides, [])
+
     def test_file_database_parent_directory_is_created(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "nested" / "picycle.sqlite3"
@@ -81,4 +127,3 @@ class StorageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

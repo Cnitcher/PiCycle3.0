@@ -19,13 +19,12 @@
 
 import RPi.GPIO as GPIO
 import time
-import math
 from speed_input.speed_input_base import SpeedBase
 
 class BikeSpeed(SpeedBase):
 
-    def __init__(self, pulse_gpio=18, radius=1.0 ):
-        super().__init__(radius)
+    def __init__(self, pulse_gpio=18, radius=1.0, pulses_per_rev=1.0, distance_multiplier=1.0):
+        super().__init__(radius, pulses_per_rev, distance_multiplier)
         
         ''' Initialize a bike speed calculator
 

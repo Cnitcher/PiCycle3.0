@@ -39,9 +39,14 @@ class ApplianceRuntime:
 
     def _create_speed(self):
         module = importlib.import_module(speed_module_name(self.settings))
+        globals_config = self.settings["globals"]
+        diameter = globals_config.get("wheel_diameter_inches")
+        radius = float(diameter) / 2.0 if diameter else float(globals_config["wheel_rad_inches"])
         return module.BikeSpeed(
             pulse_gpio=self.settings["gpio_assignments"]["wheel"]["pulses"],
-            radius=float(self.settings["globals"]["wheel_rad_inches"]),
+            radius=radius,
+            pulses_per_rev=globals_config.get("sensor_pulses_per_rev", 1),
+            distance_multiplier=globals_config.get("speed_distance_multiplier", 1.0),
         )
 
     def _create_display(self):
@@ -60,6 +65,8 @@ class ApplianceRuntime:
             "timer": str(self.speed.timer()),
             "session": self.session.snapshot(now),
         }
+        if hasattr(self.display, "appliance_snapshot"):
+            current["appliance"] = self.display.appliance_snapshot()
         self.state.update(current)
         self.display.display_status(current)
         return current

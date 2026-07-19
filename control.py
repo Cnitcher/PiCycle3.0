@@ -62,8 +62,6 @@ module = display_module_name(settings)
 DisplayModule = importlib.import_module(module)
 # controlLogger.info(f'Imported display module from {module}')
 
-display_device = DisplayModule.Display(dev_pins=settings['gpio_assignments'])
-
 '''
 *****************************************
  	Function Definitions
@@ -142,9 +140,45 @@ def _main_loop():
 		# 	display_device.display_status(current)
 		#
 		# # rest for 1 seconds
-		display_device.display_test()
+		current = {
+			'curr_speed': _metric('curr_speed'),
+			'avg_speed': _metric('avg_speed'),
+			'distance': _metric('distance'),
+			'rpm': _metric('rpm'),
+			'avg_rpm': _metric('average_rpm'),
+			'timer': str(_metric('timer', '0:00:00')),
+		}
+		display_device.display_status(current)
 
 		time.sleep(1)
+
+
+def _wheel_radius_inches(config):
+	globals_config = config.get('globals', {})
+	diameter = globals_config.get('wheel_diameter_inches')
+	if diameter:
+		return float(diameter) / 2.0
+	return float(globals_config.get('wheel_rad_inches', 1.0))
+
+
+def _metric(method_name, default=0.0):
+	method = getattr(speed_input, method_name, None)
+	if not method:
+		return default
+	try:
+		value = method()
+	except Exception:
+		return default
+	return default if value is None else value
+
+
+display_device = DisplayModule.Display(dev_pins=settings['gpio_assignments'])
+
+pulse_gpio = settings['gpio_assignments']['wheel']['pulses']
+radius = _wheel_radius_inches(settings)
+pulses_per_rev = settings['globals'].get('sensor_pulses_per_rev', 1)
+distance_multiplier = settings['globals'].get('speed_distance_multiplier', 1.0)
+speed_input = SpeedModule.BikeSpeed(pulse_gpio, radius, pulses_per_rev, distance_multiplier)
 
 if __name__ == '__main__':
 	# Start running the main loop, which will run forever
