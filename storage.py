@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Generator, Iterable
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_DB_PATH = Path("data/picycle.sqlite3")
 
 
@@ -51,14 +51,24 @@ CREATE TABLE IF NOT EXISTS program_steps (
     UNIQUE (program_id, position)
 );
 
+CREATE TABLE IF NOT EXISTS rider_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    display_name TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    archived_at REAL
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     program_id INTEGER,
+    rider_profile_id INTEGER,
     started_at REAL NOT NULL,
     ended_at REAL,
     status TEXT NOT NULL,
     summary_json TEXT NOT NULL DEFAULT '{}',
-    FOREIGN KEY (program_id) REFERENCES workout_programs(id)
+    FOREIGN KEY (program_id) REFERENCES workout_programs(id),
+    FOREIGN KEY (rider_profile_id) REFERENCES rider_profiles(id)
 );
 
 CREATE TABLE IF NOT EXISTS session_samples (
@@ -88,6 +98,10 @@ CREATE INDEX IF NOT EXISTS idx_session_samples_session_time
 
 CREATE INDEX IF NOT EXISTS idx_session_events_session_time
     ON session_events(session_id, occurred_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rider_profiles_active_name
+    ON rider_profiles(display_name COLLATE NOCASE)
+    WHERE archived_at IS NULL;
 """
 
 
@@ -103,6 +117,7 @@ def connect(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
 
 def initialize(connection: sqlite3.Connection) -> None:
     connection.executescript(SCHEMA)
+    _migrate_sessions_schema(connection)
     connection.execute(
         """
         INSERT INTO schema_meta(key, value)
@@ -112,6 +127,55 @@ def initialize(connection: sqlite3.Connection) -> None:
         (str(SCHEMA_VERSION),),
     )
     connection.commit()
+
+
+def _table_columns(connection: sqlite3.Connection, table_name: str) -> set[str]:
+    rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {row["name"] for row in rows}
+
+
+def _session_has_rider_profile_fk(connection: sqlite3.Connection) -> bool:
+    rows = connection.execute("PRAGMA foreign_key_list(sessions)").fetchall()
+    return any(row["from"] == "rider_profile_id" and row["table"] == "rider_profiles" for row in rows)
+
+
+def _migrate_sessions_schema(connection: sqlite3.Connection) -> None:
+    columns = _table_columns(connection, "sessions")
+    if "rider_profile_id" in columns and _session_has_rider_profile_fk(connection):
+        return
+
+    rider_profile_select = "rider_profile_id" if "rider_profile_id" in columns else "NULL"
+    connection.commit()
+    connection.execute("PRAGMA foreign_keys = OFF")
+    try:
+        connection.execute("DROP TABLE IF EXISTS sessions_new")
+        connection.executescript(
+            f"""
+            CREATE TABLE IF NOT EXISTS sessions_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                program_id INTEGER,
+                rider_profile_id INTEGER,
+                started_at REAL NOT NULL,
+                ended_at REAL,
+                status TEXT NOT NULL,
+                summary_json TEXT NOT NULL DEFAULT '{{}}',
+                FOREIGN KEY (program_id) REFERENCES workout_programs(id),
+                FOREIGN KEY (rider_profile_id) REFERENCES rider_profiles(id)
+            );
+
+            INSERT INTO sessions_new(
+                id, program_id, rider_profile_id, started_at, ended_at, status, summary_json
+            )
+            SELECT id, program_id, {rider_profile_select}, started_at, ended_at, status, summary_json
+            FROM sessions;
+
+            DROP TABLE sessions;
+            ALTER TABLE sessions_new RENAME TO sessions;
+            """
+        )
+        connection.commit()
+    finally:
+        connection.execute("PRAGMA foreign_keys = ON")
 
 
 @contextmanager
@@ -154,6 +218,72 @@ def get_setting(connection: sqlite3.Connection, key: str, default: Any = None) -
     if row is None:
         return default
     return _json_loads(row["value_json"])
+
+
+def _clean_display_name(display_name: str) -> str:
+    cleaned = " ".join(str(display_name).split())
+    if not cleaned:
+        raise ValueError("Rider profile display name cannot be blank.")
+    return cleaned
+
+
+def create_rider_profile(
+    connection: sqlite3.Connection,
+    display_name: str,
+    created_at: float | None = None,
+) -> int:
+    now = created_at or time.time()
+    cursor = connection.execute(
+        """
+        INSERT INTO rider_profiles(display_name, created_at, updated_at)
+        VALUES(?, ?, ?)
+        """,
+        (_clean_display_name(display_name), now, now),
+    )
+    connection.commit()
+    return int(cursor.lastrowid)
+
+
+def get_rider_profile(connection: sqlite3.Connection, rider_profile_id: int) -> dict[str, Any] | None:
+    row = connection.execute(
+        "SELECT * FROM rider_profiles WHERE id = ?",
+        (rider_profile_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_rider_profiles(
+    connection: sqlite3.Connection,
+    include_archived: bool = False,
+) -> list[dict[str, Any]]:
+    where = "" if include_archived else "WHERE archived_at IS NULL"
+    rows = connection.execute(
+        f"""
+        SELECT *
+        FROM rider_profiles
+        {where}
+        ORDER BY display_name COLLATE NOCASE, id
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def archive_rider_profile(
+    connection: sqlite3.Connection,
+    rider_profile_id: int,
+    archived_at: float | None = None,
+) -> bool:
+    now = archived_at or time.time()
+    cursor = connection.execute(
+        """
+        UPDATE rider_profiles
+        SET archived_at = ?, updated_at = ?
+        WHERE id = ? AND archived_at IS NULL
+        """,
+        (now, now, rider_profile_id),
+    )
+    connection.commit()
+    return cursor.rowcount > 0
 
 
 def create_program(
@@ -219,14 +349,15 @@ def get_program(connection: sqlite3.Connection, program_id: int) -> dict[str, An
 def create_session(
     connection: sqlite3.Connection,
     program_id: int | None = None,
+    rider_profile_id: int | None = None,
     started_at: float | None = None,
 ) -> int:
     cursor = connection.execute(
         """
-        INSERT INTO sessions(program_id, started_at, status)
-        VALUES(?, ?, 'active')
+        INSERT INTO sessions(program_id, rider_profile_id, started_at, status)
+        VALUES(?, ?, ?, 'active')
         """,
-        (program_id, started_at or time.time()),
+        (program_id, rider_profile_id, started_at or time.time()),
     )
     connection.commit()
     return int(cursor.lastrowid)
@@ -296,8 +427,17 @@ def save_completed_ride_summary(
     connection: sqlite3.Connection,
     ride: dict[str, Any],
     program_id: int | None = None,
+    rider_profile_id: int | None = None,
 ) -> int:
-    session_id = create_session(connection, program_id=program_id, started_at=ride.get("started_at"))
+    selected_rider_profile_id = rider_profile_id or ride.get("rider_profile_id")
+    if selected_rider_profile_id is not None:
+        ride = {**ride, "rider_profile_id": int(selected_rider_profile_id)}
+    session_id = create_session(
+        connection,
+        program_id=program_id,
+        rider_profile_id=selected_rider_profile_id,
+        started_at=ride.get("started_at"),
+    )
     complete_session(connection, session_id, ride, ended_at=ride.get("ended_at"))
     return session_id
 
@@ -305,16 +445,31 @@ def save_completed_ride_summary(
 def list_completed_ride_summaries(
     connection: sqlite3.Connection,
     limit: int = 20,
+    rider_profile_id: int | None = None,
 ) -> list[dict[str, Any]]:
+    params: list[Any] = []
+    rider_filter = ""
+    if rider_profile_id is not None:
+        rider_filter = "AND s.rider_profile_id = ?"
+        params.append(rider_profile_id)
+    params.append(limit)
     rows = connection.execute(
-        """
-        SELECT id, started_at, ended_at, summary_json
-        FROM sessions
-        WHERE status = 'completed'
-        ORDER BY ended_at DESC, id DESC
+        f"""
+        SELECT
+            s.id,
+            s.started_at,
+            s.ended_at,
+            s.summary_json,
+            s.rider_profile_id,
+            rp.display_name AS rider_display_name
+        FROM sessions s
+        LEFT JOIN rider_profiles rp ON rp.id = s.rider_profile_id
+        WHERE s.status = 'completed'
+        {rider_filter}
+        ORDER BY s.ended_at DESC, s.id DESC
         LIMIT ?
         """,
-        (limit,),
+        params,
     ).fetchall()
     rides = []
     for row in rows:
@@ -322,6 +477,18 @@ def list_completed_ride_summaries(
         summary.setdefault("id", f"session-{row['id']}")
         summary.setdefault("started_at", row["started_at"])
         summary.setdefault("ended_at", row["ended_at"])
+        summary.setdefault("rider_profile_id", row["rider_profile_id"])
+        if row["rider_display_name"]:
+            summary.setdefault("rider_display_name", row["rider_display_name"])
+            summary.setdefault(
+                "rider",
+                {
+                    "kind": "profile",
+                    "id": row["rider_profile_id"],
+                    "display_name": row["rider_display_name"],
+                    "durable": True,
+                },
+            )
         rides.append(summary)
     return rides
 

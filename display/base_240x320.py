@@ -23,7 +23,7 @@ import qrcode
 import logging
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
-from common import read_control, write_control
+from common import read_control, read_settings, write_control
 from picycle_appliance import PiCycleAppliance, format_duration, format_mmss
 import storage
 
@@ -74,7 +74,14 @@ class DisplayBase:
 
         self.inc_pulse_color = True
         self.icon_color = 100
-        self.appliance = PiCycleAppliance(rides=self._load_ride_history())
+        self._guest_rides = []
+        self._last_rider_key = None
+        self._last_profile_refresh = 0
+        self.appliance = PiCycleAppliance(
+            rides=[],
+            rider_profiles=self._load_rider_profiles(),
+            profile_setup_url=self._profile_setup_url(),
+        )
 
     def _init_display_device(self):
         '''
@@ -465,6 +472,8 @@ class DisplayBase:
         self._display_canvas(img)
 
     def _display_current(self, in_data):
+        self._refresh_rider_profiles()
+        self._sync_rider_history()
         self.appliance.update_metrics(in_data or {})
         self._persist_saved_ride()
         self._persist_deleted_ride()
@@ -472,7 +481,11 @@ class DisplayBase:
         draw = ImageDraw.Draw(img)
         snap = self.appliance.snapshot()
         view = snap['view']
-        if view == 'menu':
+        if view == 'rider_select':
+            self._draw_menu(draw, 'Who is riding?', snap['items'], snap['selected'], show_footer=False)
+        elif view == 'rider_setup':
+            self._draw_profile_setup(img, draw, snap)
+        elif view == 'menu':
             self._draw_menu(draw, 'PiCycle', snap['items'], snap['selected'], show_footer=False)
         elif view == 'programs':
             self._draw_menu(draw, 'Programs', snap['items'], snap['selected'])
@@ -505,20 +518,67 @@ class DisplayBase:
             self._draw_footer(draw, 'Double-click for back')
         self._display_canvas(img)
 
-    def _load_ride_history(self):
+    def _load_rider_profiles(self):
         try:
             with storage.open_database() as connection:
-                return storage.list_completed_ride_summaries(connection, limit=20)
+                return storage.list_rider_profiles(connection)
         except Exception:
             return []
+
+    def _load_ride_history(self, rider_profile_id=None):
+        if rider_profile_id is None:
+            return []
+        try:
+            with storage.open_database() as connection:
+                return storage.list_completed_ride_summaries(
+                    connection,
+                    limit=20,
+                    rider_profile_id=rider_profile_id,
+                )
+        except Exception:
+            return []
+
+    def _refresh_rider_profiles(self):
+        now = time.time()
+        if now - self._last_profile_refresh < 5:
+            return
+        self._last_profile_refresh = now
+        self.appliance.set_rider_profiles(self._load_rider_profiles())
+
+    def _sync_rider_history(self):
+        rider = self.appliance.snapshot().get('selected_rider')
+        if not rider:
+            rider_key = None
+        elif rider.get('kind') == 'profile':
+            rider_key = ('profile', rider.get('id'))
+        else:
+            rider_key = ('guest', None)
+        if rider_key == self._last_rider_key:
+            return
+        self._last_rider_key = rider_key
+        if not rider:
+            self.appliance.set_rides([])
+        elif rider.get('kind') == 'profile':
+            self.appliance.set_rides(self._load_ride_history(rider.get('id')))
+        else:
+            self.appliance.set_rides(self._guest_rides)
 
     def _persist_saved_ride(self):
         ride = self.appliance.pop_saved_ride()
         if not ride:
             return
+        if not ride.get('durable', True):
+            self._guest_rides = [ride, *self._guest_rides[:19]]
+            self.appliance.set_rides(self._guest_rides)
+            return
         try:
             with storage.open_database() as connection:
-                storage.save_completed_ride_summary(connection, ride)
+                storage.save_completed_ride_summary(
+                    connection,
+                    ride,
+                    rider_profile_id=ride.get('rider_profile_id'),
+                )
+            self.appliance.set_rides(self._load_ride_history(ride.get('rider_profile_id')))
         except Exception:
             pass
 
@@ -526,9 +586,16 @@ class DisplayBase:
         ride_id = self.appliance.pop_deleted_ride_id()
         if not ride_id:
             return
+        rider = self.appliance.snapshot().get('selected_rider')
+        if rider and rider.get('kind') == 'guest':
+            self._guest_rides = [ride for ride in self._guest_rides if ride.get('id') != ride_id]
+            self.appliance.set_rides(self._guest_rides)
+            return
         try:
             with storage.open_database() as connection:
                 storage.delete_completed_ride_summary(connection, ride_id)
+            if rider and rider.get('kind') == 'profile':
+                self.appliance.set_rides(self._load_ride_history(rider.get('id')))
         except Exception:
             pass
 
@@ -543,8 +610,32 @@ class DisplayBase:
         self.display_data = None
         self.display_timeout = None
         self.appliance.handle_input(command)
+        self._sync_rider_history()
         self._persist_saved_ride()
         self._persist_deleted_ride()
+
+    def _profile_setup_url(self):
+        settings = read_settings()
+        ui_port = int(settings.get('globals', {}).get('ui_port', 80))
+        host = self._local_ip()
+        port = '' if ui_port == 80 else f':{ui_port}'
+        return f'http://{host}{port}/profiles/new'
+
+    def _local_ip(self):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+        except Exception:
+            try:
+                return socket.gethostbyname(socket.gethostname())
+            except Exception:
+                return '127.0.0.1'
+        finally:
+            try:
+                s.close()
+            except Exception:
+                pass
 
     def _text_size(self, draw, text, font):
         bbox = draw.textbbox((0, 0), str(text), font=font)
@@ -612,6 +703,18 @@ class DisplayBase:
             y += 35
         self._draw_footer(draw, 'Double-click for back')
 
+    def _draw_profile_setup(self, canvas, draw, snap):
+        setup = snap.get('setup') or {}
+        url = setup.get('url', self._profile_setup_url())
+        self._draw_top_bar(draw, 'New Rider', '')
+        self._draw_centered_text(draw, setup.get('instruction', 'Scan for setup'), 43, 22)
+        img_qr = qrcode.make(url).resize((140, 140))
+        x = (self.WIDTH - 140) // 2
+        y = 66
+        draw.rectangle((x - 4, y - 4, x + 144, y + 144), fill=(255, 255, 255))
+        canvas.paste(img_qr, (x, y))
+        self._draw_footer(draw, 'Double-click for back')
+
     def _draw_ride(self, draw, snap):
         title = snap['active_label']
         self._draw_top_bar(draw, title, snap['elapsed_text'], title_size=22, clock_size=22, bar_height=34)
@@ -642,7 +745,11 @@ class DisplayBase:
         self._draw_footer(draw, 'Press to pause')
 
     def _draw_history(self, draw, snap):
-        self._draw_top_bar(draw, 'History', '')
+        rider = snap.get('selected_rider') or {}
+        title = 'History'
+        if rider.get('display_name'):
+            title = f"{rider['display_name']} history"
+        self._draw_top_bar(draw, title[:24], '')
         rides = snap['rides']
         selected = min(snap['selected'], max(0, len(rides) - 1))
         start = max(0, min(selected - 2, max(0, len(rides) - 5)))
@@ -668,7 +775,11 @@ class DisplayBase:
             self._draw_footer(draw, 'Press for back')
             return
         self._draw_label(draw, self._format_date(ride.get('ended_at')), (10, 31), 17)
-        self._draw_label(draw, ride.get('type') or ride.get('label', 'Ride'), (10, 51), 12, (170, 170, 170))
+        rider_name = ride.get('rider_display_name')
+        subtitle = ride.get('type') or ride.get('label', 'Ride')
+        if rider_name:
+            subtitle = f"{subtitle} - {rider_name}"
+        self._draw_label(draw, subtitle, (10, 51), 12, (170, 170, 170))
         structure = ride.get('structure')
         program = ride.get('program')
         if structure and program == 'tabata':

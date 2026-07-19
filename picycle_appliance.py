@@ -12,6 +12,10 @@ PROGRAMS = ["Tabata", "Swedish 4x4"]
 PAUSE_MENU = ["Resume", "Save and End", "Discard"]
 REVIEW_ACTIONS = ["Back", "Delete"]
 DELETE_CONFIRM_ACTIONS = ["No", "Yes"]
+GUEST_LABEL = "Guest"
+NEW_RIDER_LABEL = "New Rider"
+SETUP_INSTRUCTION = "Scan for setup"
+DEFAULT_PROFILE_SETUP_PATH = "/profiles/new"
 DOUBLE_PRESS_SECONDS = 0.28
 TIME_STEP_SECONDS = 10
 
@@ -47,8 +51,13 @@ def _program_label(label: str) -> str:
 class PiCycleAppliance:
     """Small, deterministic appliance brain shared by display and tests."""
 
-    def __init__(self, rides: list[dict[str, Any]] | None = None) -> None:
-        self.view = "menu"
+    def __init__(
+        self,
+        rides: list[dict[str, Any]] | None = None,
+        rider_profiles: list[dict[str, Any]] | None = None,
+        profile_setup_url: str = DEFAULT_PROFILE_SETUP_PATH,
+    ) -> None:
+        self.view = "rider_select"
         self.selected = 0
         self.status = "idle"
         self.active_label = "Ride"
@@ -71,6 +80,9 @@ class PiCycleAppliance:
         self._last_saved_ride: dict[str, Any] | None = None
         self._last_deleted_ride_id: str | None = None
         self.rides = rides or []
+        self.rider_profiles = self._clean_profiles(rider_profiles or [])
+        self.selected_rider: dict[str, Any] | None = None
+        self.profile_setup_url = profile_setup_url
 
     def update_metrics(self, current: dict[str, Any] | None = None, now: float | None = None) -> None:
         now = time.time() if now is None else now
@@ -141,6 +153,15 @@ class PiCycleAppliance:
 
     def go_back(self) -> bool:
         self._pending_press_at = None
+        if self.view == "rider_setup":
+            self.view = "rider_select"
+            self.selected = 0
+            return True
+        if self.view == "menu":
+            self.view = "rider_select"
+            self.selected = 0
+            self.selected_rider = None
+            return True
         if self.view in {"programs", "settings", "history"}:
             self.view = "menu"
             self.selected = 0
@@ -179,7 +200,16 @@ class PiCycleAppliance:
         self._last_deleted_ride_id = None
         return ride_id
 
+    def set_rider_profiles(self, rider_profiles: list[dict[str, Any]]) -> None:
+        self.rider_profiles = self._clean_profiles(rider_profiles)
+
+    def set_rides(self, rides: list[dict[str, Any]]) -> None:
+        self.rides = list(rides)
+        self.selected = min(self.selected, max(0, len(self.current_items()) - 1))
+
     def current_items(self) -> list[str]:
+        if self.view == "rider_select":
+            return self._rider_labels()
         if self.view == "menu":
             return MENU
         if self.view == "programs":
@@ -232,6 +262,9 @@ class PiCycleAppliance:
             "swedish_config": dict(self.swedish_config),
             "rides": list(self.rides),
             "review": review,
+            "rider_profiles": list(self.rider_profiles),
+            "selected_rider": self._selected_rider_snapshot(),
+            "setup": self._setup_snapshot() if self.view == "rider_setup" else None,
         }
 
     def active_review(self) -> dict[str, Any] | None:
@@ -315,6 +348,11 @@ class PiCycleAppliance:
             self._single_press()
 
     def _single_press(self) -> None:
+        if self.view == "rider_select":
+            self._select_rider_item()
+            return
+        if self.view == "rider_setup":
+            return
         if self.view == "menu":
             item = MENU[self.selected]
             if item == "Ride":
@@ -419,6 +457,8 @@ class PiCycleAppliance:
 
     def _start_ride(self, label: str, mode: str) -> None:
         now = time.time()
+        if self.selected_rider is None:
+            self.selected_rider = self._guest_rider()
         self.status = "riding"
         self.active_label = label
         self.active_mode = mode
@@ -444,10 +484,15 @@ class PiCycleAppliance:
 
     def _save_and_reset(self) -> None:
         ended_at = time.time()
+        rider = self._selected_rider_snapshot() or self._guest_rider()
         ride = {
             "id": f"{int(ended_at)}-{int(self.calories * 10)}",
             "label": self.active_label,
             "program": self.active_mode,
+            "rider": rider,
+            "rider_profile_id": rider.get("id") if rider.get("kind") == "profile" else None,
+            "rider_display_name": rider["display_name"],
+            "durable": rider["durable"],
             "started_at": self.started_at or ended_at - self.elapsed,
             "ended_at": ended_at,
             "durationSec": int(round(self.elapsed)),
@@ -466,7 +511,7 @@ class PiCycleAppliance:
         self._reset("idle")
 
     def _reset(self, status: str) -> None:
-        self.view = "menu"
+        self.view = "menu" if self.selected_rider else "rider_select"
         self.status = status
         self.selected = 0
         self.active_label = "Ride"
@@ -498,6 +543,72 @@ class PiCycleAppliance:
         if self.active_mode == "swedish":
             return dict(self.swedish_config)
         return None
+
+    def _select_rider_item(self) -> None:
+        labels = self._rider_labels()
+        if not labels:
+            return
+        item = labels[self.selected]
+        if item == NEW_RIDER_LABEL:
+            self.view = "rider_setup"
+            self.selected = 0
+            return
+        if item == GUEST_LABEL:
+            self.selected_rider = self._guest_rider()
+        else:
+            profile = self._profile_for_label(item)
+            if profile is None:
+                return
+            self.selected_rider = {
+                "kind": "profile",
+                "id": profile["id"],
+                "display_name": profile["display_name"],
+                "durable": True,
+            }
+        self.view = "menu"
+        self.selected = 0
+
+    def _rider_labels(self) -> list[str]:
+        labels = [profile["display_name"] for profile in self.rider_profiles]
+        labels.extend([GUEST_LABEL, NEW_RIDER_LABEL])
+        return labels
+
+    def _profile_for_label(self, label: str) -> dict[str, Any] | None:
+        return next((profile for profile in self.rider_profiles if profile["display_name"] == label), None)
+
+    def _selected_rider_snapshot(self) -> dict[str, Any] | None:
+        return dict(self.selected_rider) if self.selected_rider else None
+
+    def _setup_snapshot(self) -> dict[str, str]:
+        return {
+            "instruction": SETUP_INSTRUCTION,
+            "url": self.profile_setup_url,
+        }
+
+    @staticmethod
+    def _guest_rider() -> dict[str, Any]:
+        return {
+            "kind": "guest",
+            "id": None,
+            "display_name": GUEST_LABEL,
+            "durable": False,
+        }
+
+    @staticmethod
+    def _clean_profiles(rider_profiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        profiles = []
+        for profile in rider_profiles:
+            display_name = str(profile.get("display_name", "")).strip()
+            if not display_name:
+                continue
+            profiles.append(
+                {
+                    **profile,
+                    "id": int(profile["id"]),
+                    "display_name": display_name,
+                }
+            )
+        return profiles
 
     def _average_pace_range(self, start_sec: float, end_sec: float) -> float:
         start = max(1, int(start_sec) + 1)

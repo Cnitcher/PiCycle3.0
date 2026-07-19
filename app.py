@@ -20,6 +20,8 @@ Description: This script will start at boot, and start up the web user
 ==============================================================================
 '''
 
+import sqlite3
+
 from flask import Flask, request, abort, render_template, make_response, send_file, jsonify, redirect, render_template_string
 #from flask_mobility import Mobility
 from flask_socketio import SocketIO
@@ -40,6 +42,7 @@ from flask_socketio import SocketIO
 
 #EP - Added this which piFire indirectly called from updater
 from common import *
+import storage
 
 
 '''
@@ -151,6 +154,37 @@ def settings_page(action=None):
 						   page_theme=settings['globals']['page_theme'],
 						   cycle_name=settings['globals']['cycle_name'])
 
+@app.route('/profiles', methods=['GET'])
+def profiles_page():
+	global settings
+	with storage.open_database(_database_path()) as connection:
+		profiles = storage.list_rider_profiles(connection)
+	return render_template('profiles.html',
+						   profiles=profiles,
+						   page_theme=settings['globals']['page_theme'],
+						   cycle_name=settings['globals']['cycle_name'])
+
+@app.route('/profiles/new', methods=['POST','GET'])
+def profile_new_page():
+	global settings
+	error = None
+	display_name = ''
+	if request.method == 'POST':
+		display_name = request.form.get('display_name', '')
+		try:
+			with storage.open_database(_database_path()) as connection:
+				storage.create_rider_profile(connection, display_name)
+			return redirect('/profiles')
+		except ValueError as exc:
+			error = str(exc)
+		except sqlite3.IntegrityError:
+			error = 'That rider name already exists.'
+	return render_template('profile_new.html',
+						   error=error,
+						   display_name=display_name,
+						   page_theme=settings['globals']['page_theme'],
+						   cycle_name=settings['globals']['cycle_name'])
+
 @app.route('/api', methods=['GET'])
 @app.route('/api/<action>', methods=['GET'])
 def api_page(action=None, arg0=None, arg1=None, arg2=None, arg3=None):
@@ -242,6 +276,9 @@ def _is_checked(response, setting):
 def _allowed_file(filename):
 	return '.' in filename and \
 		   filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def _database_path():
+	return app.config.get('PICYCLE_DB_PATH', storage.DEFAULT_DB_PATH)
 
 def _paginate_list(datalist, sortkey='', reversesortorder=False, itemsperpage=10, page=1):
 	if sortkey != '':

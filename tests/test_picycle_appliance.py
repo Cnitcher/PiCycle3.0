@@ -1,6 +1,6 @@
 import unittest
 
-from picycle_appliance import PROGRAMS, PiCycleAppliance
+from picycle_appliance import NEW_RIDER_LABEL, PROGRAMS, PiCycleAppliance
 
 
 class PiCycleApplianceTests(unittest.TestCase):
@@ -9,6 +9,60 @@ class PiCycleApplianceTests(unittest.TestCase):
 
     def test_program_menu_only_contains_current_programs(self):
         self.assertEqual(PROGRAMS, ["Tabata", "Swedish 4x4"])
+
+    def test_boot_selector_lists_profiles_guest_and_new_rider(self):
+        app = PiCycleAppliance(
+            rider_profiles=[
+                {"id": 2, "display_name": "Eric"},
+                {"id": 3, "display_name": "Alex"},
+            ]
+        )
+        snap = app.snapshot()
+        self.assertEqual(snap["view"], "rider_select")
+        self.assertEqual(snap["items"], ["Eric", "Alex", "Guest", NEW_RIDER_LABEL])
+
+    def test_selecting_guest_enters_main_menu(self):
+        app = PiCycleAppliance(rider_profiles=[{"id": 2, "display_name": "Eric"}])
+        app.selected = 1
+        app.press(now=1.0)
+        self.flush_press(app, 1.0)
+
+        snap = app.snapshot()
+        self.assertEqual(snap["view"], "menu")
+        self.assertEqual(snap["selected_rider"]["kind"], "guest")
+        self.assertFalse(snap["selected_rider"]["durable"])
+
+    def test_selecting_profile_enters_main_menu(self):
+        app = PiCycleAppliance(rider_profiles=[{"id": 2, "display_name": "Eric"}])
+        app.press(now=1.0)
+        self.flush_press(app, 1.0)
+
+        snap = app.snapshot()
+        self.assertEqual(snap["view"], "menu")
+        self.assertEqual(snap["selected_rider"]["id"], 2)
+        self.assertEqual(snap["selected_rider"]["display_name"], "Eric")
+
+    def test_new_rider_opens_setup_screen(self):
+        app = PiCycleAppliance(profile_setup_url="http://bike.local/profiles/new")
+        app.selected = 1
+        app.press(now=1.0)
+        self.flush_press(app, 1.0)
+
+        snap = app.snapshot()
+        self.assertEqual(snap["view"], "rider_setup")
+        self.assertEqual(snap["setup"]["instruction"], "Scan for setup")
+        self.assertEqual(snap["setup"]["url"], "http://bike.local/profiles/new")
+
+    def test_back_from_menu_returns_to_rider_selection(self):
+        app = PiCycleAppliance()
+        app.press(now=1.0)
+        self.flush_press(app, 1.0)
+        self.assertEqual(app.view, "menu")
+
+        app.go_back()
+
+        self.assertEqual(app.view, "rider_select")
+        self.assertIsNone(app.snapshot()["selected_rider"])
 
     def test_tabata_setup_uses_ten_second_steps_and_twenty_round_max(self):
         app = PiCycleAppliance()
@@ -116,7 +170,25 @@ class PiCycleApplianceTests(unittest.TestCase):
         self.assertEqual(app.view, "menu")
         self.assertEqual(app.rides[0]["label"], "Swedish 4x4")
         self.assertEqual(app.rides[0]["structure"]["hardSec"], 240)
+        self.assertEqual(app.rides[0]["rider_display_name"], "Guest")
+        self.assertFalse(app.rides[0]["durable"])
         self.assertIsNotNone(app.pop_saved_ride())
+
+    def test_profile_owned_saved_ride_is_marked_durable(self):
+        app = PiCycleAppliance(rider_profiles=[{"id": 2, "display_name": "Eric"}])
+        app.press(now=1.0)
+        self.flush_press(app, 1.0)
+        app._start_ride("Ride", "ride")
+        app.elapsed = 60
+        app.view = "pause"
+        app.selected = 1
+        app.press(now=2.0)
+        self.flush_press(app, 2.0)
+
+        ride = app.pop_saved_ride()
+        self.assertTrue(ride["durable"])
+        self.assertEqual(ride["rider_profile_id"], 2)
+        self.assertEqual(ride["rider_display_name"], "Eric")
 
 
 if __name__ == "__main__":

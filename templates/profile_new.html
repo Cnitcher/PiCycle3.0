@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+
+{% block title %}New Rider{% endblock %}
+
+{% block content %}
+<br>
+<h2>New Rider</h2>
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/profiles/new">
+    <div class="form-group">
+        <label for="display_name">Rider name</label>
+        <input
+            id="display_name"
+            class="form-control"
+            name="display_name"
+            value="{{ display_name }}"
+            maxlength="80"
+            autocomplete="name"
+            autofocus>
+    </div>
+    <button class="btn btn-primary" type="submit">Save Rider</button>
+    <a class="btn btn-secondary" href="/profiles">Cancel</a>
+</form>
+{% endblock %}
