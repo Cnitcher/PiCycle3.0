@@ -27,6 +27,9 @@ from common import read_control, read_settings, write_control
 from picycle_appliance import PiCycleAppliance, format_duration, format_mmss
 import storage
 
+
+DEFAULT_UI_PORT = 8000
+
 '''
 Display base class definition
 '''
@@ -616,7 +619,7 @@ class DisplayBase:
 
     def _profile_setup_url(self):
         settings = read_settings()
-        ui_port = int(settings.get('globals', {}).get('ui_port', 80))
+        ui_port = int(settings.get('globals', {}).get('ui_port', DEFAULT_UI_PORT))
         host = self._local_ip()
         port = '' if ui_port == 80 else f':{ui_port}'
         return f'http://{host}{port}/profiles/new'
