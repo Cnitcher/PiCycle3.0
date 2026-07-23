@@ -10,6 +10,17 @@ class PiCycleApplianceTests(unittest.TestCase):
     def test_program_menu_only_contains_current_programs(self):
         self.assertEqual(PROGRAMS, ["Tabata", "Swedish 4x4"])
 
+    def test_metrics_use_echo_style_cadence_curve_for_calories(self):
+        app = PiCycleAppliance()
+        app.status = "riding"
+        app._last_update_at = 0.0
+
+        app.update_metrics({"curr_speed": 11.0, "rpm": 50.0}, now=60.0)
+
+        self.assertAlmostEqual(app.speed, 11.0)
+        self.assertAlmostEqual(app.pace, 7.59, places=2)
+        self.assertAlmostEqual(app.calories, 7.59, places=2)
+
     def test_boot_selector_lists_profiles_guest_and_new_rider(self):
         app = PiCycleAppliance(
             rider_profiles=[

@@ -178,7 +178,14 @@ pulse_gpio = settings['gpio_assignments']['wheel']['pulses']
 radius = _wheel_radius_inches(settings)
 pulses_per_rev = settings['globals'].get('sensor_pulses_per_rev', 1)
 distance_multiplier = settings['globals'].get('speed_distance_multiplier', 1.0)
-speed_input = SpeedModule.BikeSpeed(pulse_gpio, radius, pulses_per_rev, distance_multiplier)
+cadence_pulses_per_rev = settings['globals'].get('sensor_pulses_per_crank_rev', 1.0)
+speed_input = SpeedModule.BikeSpeed(
+	pulse_gpio,
+	radius,
+	pulses_per_rev,
+	distance_multiplier,
+	cadence_pulses_per_rev,
+)
 
 if __name__ == '__main__':
 	# Start running the main loop, which will run forever

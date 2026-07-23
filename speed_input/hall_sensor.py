@@ -23,8 +23,20 @@ from speed_input.speed_input_base import SpeedBase
 
 class BikeSpeed(SpeedBase):
 
-    def __init__(self, pulse_gpio=18, radius=1.0, pulses_per_rev=1.0, distance_multiplier=1.0):
-        super().__init__(radius, pulses_per_rev, distance_multiplier)
+    def __init__(
+        self,
+        pulse_gpio=18,
+        radius=1.0,
+        pulses_per_rev=1.0,
+        distance_multiplier=1.0,
+        cadence_pulses_per_rev=1.0,
+    ):
+        super().__init__(
+            radius,
+            pulses_per_rev,
+            distance_multiplier,
+            cadence_pulses_per_rev,
+        )
         
         ''' Initialize a bike speed calculator
 
@@ -96,5 +108,20 @@ class BikeSpeed(SpeedBase):
         """ Return the total distance traveled """
 
         return self.total_rev_count * self.dist_factor
+
+    def rpm(self):
+        """Return current estimated crank cadence."""
+
+        if (time.time() - self.prev_time) > 5.0:
+            return 0.0
+        return self._calc_cadence_rpm(1, self.curr_time_delta_sec)
+
+    def average_rpm(self):
+        """Return average estimated crank cadence."""
+
+        return self._calc_cadence_rpm(
+            self.total_rev_count,
+            time.time() - self.start_time,
+        )
 
     

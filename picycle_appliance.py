@@ -6,6 +6,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from effort import echo_machine_calories_per_minute
+
 
 MENU = ["Ride", "Programs", "History", "Settings"]
 PROGRAMS = ["Tabata", "Swedish 4x4"]
@@ -100,7 +102,8 @@ class PiCycleAppliance:
         dt = max(0.0, now - self._last_update_at)
         self._last_update_at = now
         self.speed = max(0.0, float(current.get("curr_speed") or 0.0))
-        self.pace = self.speed * 0.75
+        rpm = max(0.0, float(current.get("rpm") or 0.0))
+        self.pace = echo_machine_calories_per_minute(rpm)
         self.elapsed += dt
         self.distance += self.speed * dt / 3600.0
         self.calories += self.pace * dt / 60.0

@@ -17,7 +17,13 @@ import math
 
 class SpeedBase:
 
-    def __init__(self, radius=1.0, pulses_per_rev=1.0, distance_multiplier=1.0):
+    def __init__(
+        self,
+        radius=1.0,
+        pulses_per_rev=1.0,
+        distance_multiplier=1.0,
+        cadence_pulses_per_rev=1.0,
+    ):
         
         """ Initialize a bike speed calculator
 
@@ -36,12 +42,21 @@ class SpeedBase:
 
         self.pulses_per_rev = max(float(pulses_per_rev), 1.0)
         self.distance_multiplier = float(distance_multiplier)
+        self.cadence_pulses_per_rev = max(float(cadence_pulses_per_rev), 1.0)
 
         # Factor for converting sensor pulses to miles.
         # One revolution travels the wheel circumference, not the wheel area.
         circ_inches = 2 * math.pi * radius
         circ_feet = circ_inches / 12.0
         self.dist_factor = (circ_feet / 5280.0) * self.distance_multiplier / self.pulses_per_rev
+
+    def _calc_cadence_rpm(self, pulse_delta, time_delta):
+        """Convert sensor pulses over time into estimated crank cadence."""
+
+        if time_delta <= 0.0:
+            return 0.0
+        pulses_per_minute = float(pulse_delta) / float(time_delta) * 60.0
+        return pulses_per_minute / self.cadence_pulses_per_rev
 
     def stop_riding(self):       
         pass
