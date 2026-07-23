@@ -6,7 +6,7 @@
     "lastupdated": 1712623870,
     "page_theme": "dark",
     "real_hw": true,
-    "sensor_pulses_per_crank_rev": 5.0,
+    "sensor_pulses_per_crank_rev": 15.5,
     "sensor_pulses_per_rev": 1,
     "speed_distance_multiplier": 0.55,
     "ui_port": 8000,

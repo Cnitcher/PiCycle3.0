@@ -3,6 +3,7 @@ import math
 import unittest
 from pathlib import Path
 
+from effort import echo_machine_calories_per_minute
 from speed_input.speed_input_base import SpeedBase
 
 
@@ -30,7 +31,29 @@ class SpeedInputMathTests(unittest.TestCase):
         multiplier = settings["globals"]["speed_distance_multiplier"]
 
         self.assertAlmostEqual(20.0 * multiplier, 11.0)
-        self.assertEqual(settings["globals"]["sensor_pulses_per_crank_rev"], 5.0)
+        self.assertEqual(settings["globals"]["sensor_pulses_per_crank_rev"], 15.5)
+
+    def test_default_calibration_maps_full_sprint_to_target_calories(self):
+        root = Path(__file__).resolve().parents[1]
+        settings = json.loads((root / "settings.json").read_text(encoding="utf-8"))
+        globals_config = settings["globals"]
+        circumference_miles = (
+            math.pi * globals_config["wheel_diameter_inches"] / 12.0 / 5280.0
+        )
+        miles_per_pulse = (
+            circumference_miles * globals_config["speed_distance_multiplier"]
+        )
+        sprint_pulses_per_minute = 36.0 / miles_per_pulse / 60.0
+        speed = SpeedBase(
+            radius=globals_config["wheel_diameter_inches"] / 2.0,
+            distance_multiplier=globals_config["speed_distance_multiplier"],
+            cadence_pulses_per_rev=globals_config["sensor_pulses_per_crank_rev"],
+        )
+        sprint_rpm = speed._calc_cadence_rpm(sprint_pulses_per_minute, 60.0)
+        calories_in_30_seconds = echo_machine_calories_per_minute(sprint_rpm) / 2.0
+
+        self.assertGreaterEqual(calories_in_30_seconds, 4.5)
+        self.assertLessEqual(calories_in_30_seconds, 5.5)
 
 
 if __name__ == "__main__":

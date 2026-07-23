@@ -13,14 +13,31 @@ The default settings now use:
 ```json
 {
   "speed_distance_multiplier": 0.55,
-  "sensor_pulses_per_crank_rev": 5.0
+  "sensor_pulses_per_crank_rev": 15.5
 }
 ```
 
 - Speed and distance use the same `0.55` scale so they remain internally consistent.
   The observed 20 mph becomes 11 mph.
-- Cadence divides the Hall sensor's pulse rate by 5. This estimates crank RPM when the
-  sensed fan/shaft turns five times per crank revolution.
+- Cadence divides the Hall sensor's faster fan/shaft pulse rate by 15.5. This is the
+  current virtual crank-cadence calibration for the Echo-style effort curve.
+
+## 2026-07-23 Sprint Calibration
+
+The initial `5.0` cadence divisor produced about 200 machine calories during a
+30-second sprint averaging 36 mph. That pulse rate was being interpreted as roughly
+169 crank RPM, which is far outside the useful range of the nonlinear watts curve.
+
+The rider's target for the same effort is 4.5-5.5 machine calories. A `15.5` divisor
+maps 36 mph to approximately 54.6 virtual crank RPM and 4.8 calories over 30 seconds:
+
+| Observed effort | Virtual RPM | Expected calories |
+| --- | ---: | ---: |
+| 36 mph for 30 seconds | 54.6 | 4.8 |
+
+Because calories integrate instantaneous effort, a sprint with large speed spikes may
+land somewhat above the constant-36-mph reference. Use the completed 30-second total,
+not the peak live pace, for the next field check.
 
 ## Echo-Style Effort
 
